@@ -1,0 +1,13 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+tfplan.json
+*.tfvars
+!example.tfvars
+.venv/
+__pycache__/
+node_modules/
+.env
+.env.*
+.governance/

@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: terraform
+    directory: /
+    schedule: { interval: weekly }
+# Add the repo's language ecosystem (pip, npm, docker) when it exists.
