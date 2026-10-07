@@ -1,0 +1,78 @@
+name: terraform-ci (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        type: string
+        default: terraform
+      terraform_version:
+        type: string
+        default: "1.9.8"
+      run_plan:
+        description: "Plan + policy gate on the plan JSON (needs Azure OIDC secrets)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  static:
+    name: fmt / validate / tflint / checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+      - run: terraform fmt -check -recursive
+        working-directory: ${{ inputs.working_directory }}
+      - run: terraform init -backend=false -input=false
+        working-directory: ${{ inputs.working_directory }}
+      - run: terraform validate
+        working-directory: ${{ inputs.working_directory }}
+      - uses: terraform-linters/setup-tflint@v4
+      - run: tflint --init && tflint --recursive
+        working-directory: ${{ inputs.working_directory }}
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: ${{ inputs.working_directory }}
+          framework: terraform
+          quiet: true
+
+  policy:
+    name: plan + conftest gate
+    if: ${{ inputs.run_plan }}
+    needs: static
+    runs-on: ubuntu-latest
+    env:
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/platform-governance
+          ref: main
+          path: .governance
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
+      - run: |
+          terraform init -input=false
+          terraform plan -input=false -out=tfplan
+          terraform show -json tfplan > tfplan.json
+        working-directory: ${{ inputs.working_directory }}
+      - name: Install conftest
+        run: |
+          v=0.56.0
+          curl -sSL "https://github.com/open-policy-agent/conftest/releases/download/v${v}/conftest_${v}_Linux_x86_64.tar.gz" | tar xz conftest
+          sudo mv conftest /usr/local/bin/
+      - name: Policy gate (TF-3, TF-4, TF-5, TF-9, TF-10, TF-12)
+        run: conftest test --all-namespaces -p ../.governance/policies/terraform tfplan.json
+        working-directory: ${{ inputs.working_directory }}

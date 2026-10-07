@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: __OWNER__/platform-governance
+          ref: main
+          path: .governance
+      - name: Audit structure (REPO-2, COST-1, GIT-4, SEC-4, TF-9)
+        run: .governance/scripts/audit-repo.sh .
+      - name: PR title is a Conventional Commit (GIT-3)
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "$TITLE" | grep -Eq '^(feat|fix|chore|docs|refactor|ci|test|perf)(\([a-z0-9-]+\))?!?: .+' \
+            || { echo "Title must be a Conventional Commit: $TITLE"; exit 1; }
+      - name: PR body has required sections (GIT-4)
+        if: github.event_name == 'pull_request'
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          for s in '## Why' '## What' '## Risk' '## AI involvement'; do
+            grep -q "$s" <<<"$BODY" || { echo "PR body missing '$s'"; exit 1; }
+          done
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+# Terraform repos: add a job calling the shared pipeline.
+#
+#  terraform:
+#    uses: __OWNER__/platform-governance/.github/workflows/terraform-ci.yml@main
+#    with:
+#      working_directory: terraform
+#    secrets: inherit
