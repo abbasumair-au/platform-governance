@@ -1,8 +1,28 @@
 # platform-governance
 
+[![ci](https://github.com/abbasumair-au/platform-governance/actions/workflows/ci.yml/badge.svg)](https://github.com/abbasumair-au/platform-governance/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Status: active
 
 The single source of truth for how every repo in this account is built: conventions, policy-as-code, reusable CI, and a template that new repos start from. Written because most code here is AI-assisted, and AI assistance only stays safe inside a hard, automated frame.
+
+## Example: a rule, its check, its test
+
+Every convention names the check that enforces it. For instance `TF-5` (every new Azure resource carries `project`, `env`, `owner` and `managed-by` tags) is an OPA policy that runs against the Terraform plan JSON, in [`policies/terraform/tags.rego`](policies/terraform/tags.rego):
+
+```rego
+deny contains msg if {
+	some rc in input.resource_changes
+	"create" in rc.change.actions
+	taggable(rc)
+	# ...compute which required tags are absent...
+	count(missing) > 0
+	msg := sprintf("TF-5: %s is missing tags: %v", [rc.address, missing])
+}
+```
+
+A plan that creates an untagged resource fails the pipeline with `TF-5: azurerm_resource_group.x is missing tags: {...}` before anything is applied. The policies are unit-tested in [`policies_test.rego`](policies/terraform/policies_test.rego) and run with `make test`.
 
 ## What's inside
 
